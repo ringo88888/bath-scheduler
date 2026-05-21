@@ -21,3 +21,4 @@ def initialize_db():
         )
     """)
 
+
