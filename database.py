@@ -11,6 +11,7 @@ def get_connection():
     conn.row_factory = sqlite3.Row #列名でアクセスできるようにする
     return conn #接続を呼び出し元に返す
 
+# ─── 初期化initialize関数 ───────────────────────────────────────────────
 #connはデータベースへの接続回線、cursorは受話器(窓口)
 def initialize_db(): #initializeイニシャライズ＝初期化
     conn = get_connection()
@@ -75,6 +76,8 @@ def initialize_db(): #initializeイニシャライズ＝初期化
     # is_extra INTEGER　0が「通常の予定」、1が「予備外入浴」。急に追加した入浴がここに入る。
     # note TEXT　メモ欄
 
+
+    #どの週の予定なのか、その週の予定内容を保存する、いつ保存したかを保存テーブル
     c.execute("""
         CREATE TABLE IF NOT EXISTS schedule_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -83,8 +86,174 @@ def initialize_db(): #initializeイニシャライズ＝初期化
             saved_at TEXT DEFAULT (datetime('now', 'localtime'))
         )
     """)
-
+    #week_start 2025-05-25'のようにその週の月曜日の日付を保存
+    #snapshot その週の全予定をまるごと保存
+    #saved_at スナップショットを保存した日時
     conn.commit() #ここまでの変更を確定してbath.dbに書き込む
     conn.close() #データベースへの接続を切ります。使い終わったら必ず閉じる、というルール
 
-    #　↑ここまでinitialize関数
+#↑ここまでinitialize関数
+
+
+# ─── 設定 ───────────────────────────────────────────────
+
+#id:1の行のデータを辞書型に変換するという一連の動作をおこない、関数呼びだし場所に返す関数
+def get_settings():
+    conn = get_connection()
+    row = conn.execute("SELECTION * FROM settings WHERE id = 1").fetchone() #excuteはsql文の実行
+    conn.close()
+    if row:
+        return dict(row)
+    return {}
+
+#設定情報更新のための関数
+def save_settings(data: dict):
+    conn = get_connection()
+    conn.execute("""
+        UPDATE settings SET
+            start_date = :start_date,
+            bath_days = :bath_days,
+            bath_days_am_only = :bath_days_am_only,
+            am_start = :am_start,
+            pm_start = :pm_start,
+            duration_min = :duration_min,
+            end_limit = :end_limit,
+            weekly_count = :weekly_count,
+            min_interval_days = :min_interval_days
+        WHERE id = 1
+    """, data)
+    conn.commit()
+    conn.close()
+    #プレイスホルダー:名前で対応（save_settingsのように列が多い時に便利）
+
+
+
+# ─── 患者 ───────────────────────────────────────────────
+
+#全入院中患者データを取得
+def get_all_patients(active_only=True):
+    conn = get_connection()
+    query = "SELECT * FROM patients"
+    if active_only:
+        query += "WHERE is_active = 1" #sqlではpythonの変数をよめないので、PythonのTrueをSQL文の条件に翻訳
+    rows = conn.execute(query).fetchall()
+    conn.close()
+    return [dict(r) for r in rows] #rowsの中のrそれぞれをdict(r)にしたリスト
+
+#車いすと見守りをしないverの患者の追加
+def add_patient(name, assist_type, wheelchair=False, monitoring=False):
+    conn = get_connection()
+    conn.execute("""
+        INSERT INTO patients (name, assist_type, wheelchair, monitoring)
+        VALUES (?, ?, ?, ?)
+    """, (name, assist_type, int(wheelchair), int(monitoring)))
+    conn.commit()
+    conn.close()
+    #プレイスホルダー?は順番で対応（add_patientのように引数が少ない時に便利）
+    #この?に何を入れるかを、次の引数で指定(,の後の部分)
+
+#患者を退院させる
+def discharge_patient(patient_id):
+    conn = get_connection()
+    conn.execute(
+        "UPDATE patients SET is_active = 0 WHERE id = ?", (patient_id,)
+    )
+    conn.commit()
+    conn.close()
+    #更新するpatinet_idの？には、(patient_id,)が入る
+
+
+
+# ─── 予定 ───────────────────────────────────────────────
+
+#指定した週の月曜〜日曜の予定を、患者情報と結合して取得する関数
+def get_schedules_for_week(week_start: str):
+    from datetime import date, timedelta  #週の開始日から終了日を計算するためにインポート
+    start = date.fromisoformat(week_start) #文字列を日付方に変換し計算可能にする。日付から月曜日（週の開始日）を計算して開始日を設定
+    end = start + timedelta(days=6) #週の終了日を計算
+    conn = get_connection()
+    rows = conn.execute("""
+        SELECT s.*, p.name, p.assist_type, p.wheelchair, p.monitoring
+        FROM schedules s
+        JOIN patients p ON s.patient_id = p.id
+        WHERE s.date BETWEEN ? AND ?
+        ORDER BY s.date, s.time_slot
+    """, (str(start), str(end))).fetchall()
+    #schedulesテーブル → s,patientsテーブル  → p
+    #SELECTで「schedulesテーブルの全列」,「patientsテーブルから名前と介助情報」
+    #WHERE s.date BETWEEN ? AND ? 日付がstartからendの範囲内の行だけを取得します。
+    #ORDER BY s.date, s.time_slot 日付順、同じ日なら時間順に並べます。
+
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+#その週の通常予定を一度削除して、新しい予定を一括で入れ直す関数
+def save_schedules_bulk(schedules: list):
+    if not schedules:
+        return
+    week_dates = list({s["date"] for s in schedules}) #重複を削除することでその週に予定がある日付の一覧をだす
+    conn = get_connection()
+    for d in week_dates:
+        conn.execute(
+            "DELETE FROM schedules WHERE date = ? AND is_extra = 0", (d,)
+        )
+    conn.executemany("""
+        INSERT INTO schedules (patient_id, date, time_slot, is_actual, is_extra, note)
+        VALUES (:patient_id, :date, :time_slot, :is_actual, :is_extra, :note)
+    """, schedules)
+    conn.commit()
+    conn.close()
+
+#指定した患者の、指定した日より前の最終入浴日を取得する
+def get_last_bath_date(patinet_id: int, before_date: str):
+    conn = get_connection()
+    row = conn.execute("""
+        SELECT date FROM schedules
+        WHERE patient_id = ? AND date < ?
+        ORDER BY date DESC, time_slot DESC
+        LIMIT 1
+    """, (patinet_id, before_date)).fetchone()
+    #patinet_id（指定患者）とbefore_date（指定した日付）のdateデータを選択
+    #そのdataデータをtime_slot加味して降順（新しい順）に並び替え、
+    #その中から、一番新しい１行のみを選択
+    conn.close()
+    return row["date"] if row else None
+
+
+# ─── 履歴（Undo用） ──────────────────────────────────────
+
+#週の開始日と週の予定をまるごと文字列に変換してschedule_historyテーブルに保存する関数
+def save_history_snapshot(week_start: str, schedules: list):
+    conn = get_connection()
+    conn.execute("""
+        INSERT INTO schedule_history (week_start, snapshot)
+        VALUES (?, ?)
+    """, (week_start, json.dumps(schedules, ensure_ascii=False)))
+    #schedulesはPythonのリスト.json.dumps()はPythonのリストをJSON文字列に変換する
+    #ensure_ascii=Falseは「日本語をそのまま保存する
+    conn.commit()
+    conn.close()
+
+#chedule_historyテーブルに保存された履歴から、最新だけ取得する関数
+def get_latest_history(week_start: str):
+    conn = get_connection()
+    row = conn.execute("""
+        SELECT snapshot FROM schedule_history
+        WHERE week_start = ?
+        ORDER BY id DESC
+        LIMIT 1
+    """, (week_start,)).fetchone()
+    conn.close()
+    return json.loads(row["snapshot"]) if row else None
+    # rowがあればjson.loads()を実行、なければNone
+
+
+
+
+# ─── initialize関数実行 ──────────────────────────────────────
+
+initialize_db()
+#database.pyが読み込まれた瞬間に自動で実行される
+#初回起動 → テーブルがない → テーブルを作成する
+#2回目以降 → テーブルがある → IF NOT EXISTSでスキップ
