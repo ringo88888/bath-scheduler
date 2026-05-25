@@ -72,7 +72,7 @@ def generate_schedule(week_start:date) -> list[dict]:
 
 
     for d in week_dates:  #week_datesの日付を1つずつdに入れながら繰り返す
-        weekday = d.weekday()  #日付から入浴可能な曜日番号を取得
+        weekday = d.weekday()  #日付から曜日番号を取得
         if weekday not in bath_days:   #もしdが、weekday＝入用可能な曜日に含まれていなければ
             continue  #スキップする
         include_pm = weekday not in am_only_days
@@ -87,3 +87,93 @@ def generate_schedule(week_start:date) -> list[dict]:
         #曜日ごとに午前枠・午後枠を辞書に入れる
         am_slots_by_day[d] = am_times
         pm_slots_by_day[d] = pm_times
+
+    #入浴可能な枠を分散配置の順番でavailable_slotsに並べる
+    #am_slots_by_dayはyぷ尾ごとの午前枠リスト,各曜日の午前枠数を調べて最大値を取得
+    max_am = max((len(v) for v in am_slots_by_day.values()), default=0)
+    #枠番号（0,1,2）でループ
+    for slot_idx in range(max_am):
+        #各枠番号に対して全曜日をループ
+        for d in week_dates:
+            if d in am_slots_by_day and slot_idx < len(am_slots_by_day[d]):
+                available_slots.append((d, am_slots_by_day[d][slot_idx]))
+
+    max_pm = max((len(v) for v in pm_slots_by_day.values()), default=0)
+    for slot_idx in range(max_pm):
+        for d in week_dates:
+            if d in pm_slots_by_day and slot_idx < len(pm_slots_by_day[d]):
+                available_slots.append((d, pm_slots_by_day[d][slot_idx]))
+
+    #①max_am = 3  # 一番枠数が多い曜日が3枠
+    #➁slot_idx = 0 → 1枠目（09:30）, slot_idx = 1 → 2枠目（10:00）, slot_idx = 2 → 3枠目（10:30）
+    #➂slot_idx=0のとき：月09:30 → 火09:30 → 水09:30 → 木09:30 → 金09:30 → 土09:30
+    #  slot_idx=1のとき：月10:00 → 火10:00 → 水10:00 → 木10:00 → 金10:00 → 土10:00
+    #  slot_idx=2のとき：月10:30 → 火10:30 → 水10:30 → 木10:30 → 金10:30 → 土（スキップ）
+    #④最終的なavailable_slotsの中身
+    #  [
+#     (5/25, "09:30"),  # 月・午前1枠目
+#     (5/26, "09:30"),  # 火・午前1枠目
+#     (5/27, "09:30"),  # 水・午前1枠目
+#     ...
+#     (5/25, "10:00"),  # 月・午前2枠目
+#     (5/26, "10:00"),  # 火・午前2枠目
+#     ...
+#     (5/25, "13:30"),  # 月・午後1枠目
+#     (5/26, "13:30"),  # 火・午後1枠目
+#     ...
+# ]
+
+
+    booked_slots = set() #集合体 例booked_slots.add(("2025-05-25", "09:30"))
+    result = [] #最終的に追加されるスケジュール
+
+    week_start_str = str(week_start) #week_startはdate型なのでstr文字型に変換
+    last_bath = {  #各患者の最終入浴日を取得して辞書を作る
+        p["id"]: get_last_bath_date(p["id"], week_start_str) #辞書内包表記 {キー: 値 for 変数 in リスト}
+        for p in patients
+    }
+
+    week_count = {p["id"]: 0 for p in patients}  #入浴した回数を取得して辞書を作る 辞書内包表記、最初は全員０回
+
+    #全患者の最終入浴日のリスト ※前回から何日空いているか計算用
+    week_last = {p["id"]: (
+        date.fromisoformat(last_bath[p["id"]]) if last_bath[p["id"]] else None
+        #date.fromisoformatでISO形式の文字列をdate型に変換 つまり
+        #last_bath[p["id"]]最終入浴日が存在(True)ならば、date型に変換する、最終入浴日がないならNoneのまま
+    ) for p in patients}
+
+
+    for _ in range(weekly_count): #週２回繰り返す（weekly_countの設定数）
+        for p in patients: #全患者を順番に処理する
+            if week_count[p["id"]] >= weekly_count: #すでに2回割り当て済みならスキップ
+                continue
+
+            assigned = False #その患者に枠が割り当てられたかどうかを記録する変数。最初はFalse（未割り当て）
+            for slot_date, slot_time in available_slots: #available_slots(日付, 時刻)のタプルリストを、日付と時刻それぞれの変数に分けられるようにする（アンパックという）
+                slot_key = (str(slot_date), slot_time) #予約済みチェックに使うキーを作る。例slot_key = ("2025-05-25", "09:30")booked_slotsに同じキーがあれば「すでに予約済み」とわかる
+
+                if slot_key in booked_slots:
+                    continue
+
+                prev = week_last[p["id"]] #辞書名[キー]でキーに対応する値が取れる
+                if prev is not None: #前回入浴日が存在する場合だけ間隔チェック is not Noneは「None」ではない
+                    gap = (slot_date - prev).days
+                    if gap < min_interval:
+                        continue
+
+                booked_slots.add(slot_key)
+                week_count[p["id"]] += 1  #そのidの患者の今週の入浴回数に1を足す
+                week_last[p["id"]] = slot_date #そのidの患者の最終入浴日を今回割り当てた日付で上書きする
+
+                result.append({
+                    "patient_id": p["id"],
+                    "date": str(slot_date), #入浴する日
+                    "time_slot": slot_time,  #入浴する時間
+                    "is_actual": 0,
+                    "is_extra": 0,
+                    "note": None,
+                })
+                assigned = True
+                break
+
+    return result
