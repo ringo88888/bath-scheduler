@@ -5,9 +5,9 @@ from scheduler import generate_schedule
 
 DAY_JP = ["月", "火", "水", "木", "金", "土", "日"]
 ASSIST_ICON = {
-    "duo":    "👥 二人介助",
-    "nurse":  "🏥 看護師",
-    "helper": "🤝 補助者",
+    "duo":    "二人",
+    "nurse":  "看護師一人",
+    "helper": "補助者一人",
 }
 
 
@@ -71,6 +71,7 @@ def render():
     am_only_days = list(map(int, settings.get("bath_days_am_only", "5").split(","))) \
         if settings.get("bath_days_am_only") else []
     pm_start = settings.get("pm_start", "13:30")
+    am_end = settings.get("am_end", "12:00")
 
     from scheduler import generate_time_slots
     all_slots = set()
@@ -81,7 +82,7 @@ def render():
             continue
         include_pm = wd not in am_only_days
         times = generate_time_slots(
-            settings["am_start"], pm_start,
+            settings["am_start"], am_end, pm_start,
             int(settings["duration_min"]), settings["end_limit"], include_pm
         )
         all_slots.update(times)
@@ -100,11 +101,10 @@ def render():
     for i, d in enumerate(week_dates):
         with header_cols[i + 1]:
             wd = d.weekday()
-            label = f"**{DAY_JP[wd]}**  \n{d.month}/{d.day}"
             if wd not in bath_days:
                 st.markdown(f":gray[{DAY_JP[wd]}  \n{d.month}/{d.day}]")
             else:
-                st.markdown(label)
+                st.markdown(f"**{DAY_JP[wd]}**  \n{d.month}/{d.day}")
 
     # ─── 時間枠ごとの行 ────────────────────────────────────
     prev_section = None
@@ -146,21 +146,27 @@ def render():
                         "border-radius:4px'></div>",
                         unsafe_allow_html=True
                     )
+                elif slot_time >= am_end and slot_time < pm_start:
+                    # 午前終了時間〜午後開始時間の間は入浴不可
+                    st.markdown(
+                        "<div style='background:#B4B2A9;height:44px;"
+                        "border-radius:4px'></div>",
+                        unsafe_allow_html=True
+                    )
                 elif sched:
                     p = patient_map.get(sched["patient_id"])
                     if p:
                         assist = ASSIST_ICON.get(p["assist_type"], "")
                         wc = "🦽" if p["wheelchair"] else ""
                         mi = "👁️" if p["monitoring"] else ""
-                        last = db.get_last_bath_date(
-                            p["id"], str(d)
-                        )
+                        last = db.get_last_bath_date(p["id"], str(d))
                         last_str = ""
                         if last:
                             ld = date.fromisoformat(last)
                             last_str = f"last:{ld.month}/{ld.day}"
                         st.success(
-                            f"{assist}{wc}{mi} **{p['name']}**  \n"
+                            f"{assist} {wc}{mi}  \n"
+                            f"**{p['name']}**  \n"
                             f"{last_str}"
                         )
                 else:

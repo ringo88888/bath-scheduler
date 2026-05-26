@@ -40,6 +40,7 @@ def initialize_db(): #initializeイニシャライズ＝初期化
             pm_start TEXT DEFAULT '13:30',
             duration_min INTEGER DEFAULT 30,
             end_limit TEXT DEFAULT '17:00',
+            am_end TEXT DEFAULT '12:00',
             weekly_count INTEGER DEFAULT 2,
             min_interval_days INTEGER DEFAULT 2
         )
@@ -117,6 +118,7 @@ def save_settings(data: dict):
             am_start = :am_start,
             pm_start = :pm_start,
             duration_min = :duration_min,
+            am_end = :am_end,
             end_limit = :end_limit,
             weekly_count = :weekly_count,
             min_interval_days = :min_interval_days

@@ -66,12 +66,16 @@ def render():
             "午前の開始時間",
             value=_parse_time(settings.get("am_start", "09:30")) #文字列→time型に変換
         )
+        am_end = st.time_input(
+            "午前の終了時間",
+            value=_parse_time(settings.get("am_end", "12:00"))
+        )
         pm_start = st.time_input(
             "午後の開始時間",
             value=_parse_time(settings.get("pm_start", "13:30"))
         )
         end_limit = st.time_input(
-            "絶対終了時刻",
+            "午後終了時刻",
             value=_parse_time(settings.get("end_limit", "17:00"))
         )
 
@@ -91,7 +95,7 @@ def render():
                     if st.checkbox("午前のみ", value=(i in current_am_only), key=f"amonly_{i}"):
                         am_only_days.append(i)
 
-    if st.button("💾 設定を保存"):
+    if st.button("設定を保存"):
         db.save_settings({
             "start_date": str(start_date),
             "bath_days": ",".join(map(str, selected_days)),
@@ -99,13 +103,14 @@ def render():
             "am_start": am_start.strftime("%H:%M"),
             "pm_start": pm_start.strftime("%H:%M"),
             "duration_min": duration,
+            "am_end": am_end.strftime("%H:%M"),
             "end_limit": end_limit.strftime("%H:%M"),
             "weekly_count": weekly_count,
             "min_interval_days": min_interval,
         })
         st.success("設定を保存しました")
 
-        st.divider()
+    st.divider()
 
     # ─── 患者一覧 ──────────────────────────────────────────
     st.markdown("#### 患者一覧")
@@ -115,7 +120,7 @@ def render():
             with st.expander(f"{p['name']}"):
                 col1, col2 = st.columns([3, 1])
                 with col1:
-                    assist_label = {"duo": "二人介助", "nurse": "看護師介助", "helper": "補助者介助"}
+                    assist_label = {"duo": "二人介助", "nurse": "看護師一人介助", "helper": "補助者一人介助"}
                     st.write(f"介助タイプ: **{assist_label.get(p['assist_type'], '')}**")
                     opts = []
                     if p["wheelchair"]: opts.append("車いす")
@@ -138,7 +143,7 @@ def render():
         assist_type = st.radio(
             "介助タイプ *",
             options=["duo", "nurse", "helper"],
-            format_func=lambda x: {"duo": "二人介助", "nurse": "看護師介助", "helper": "補助者介助"}[x],
+            format_func=lambda x: {"duo": "二人介助", "nurse": "看護師一人介助", "helper": "補助者一人介助"}[x],
             horizontal=True
         )
         col1, col2 = st.columns(2)
@@ -159,7 +164,7 @@ def render():
     st.divider()
 
     # ─── 管理表作成ボタン ─────────────────────────────────────
-    if st.button("✨ 管理表を作成する → 管理表ページへ", type="primary", use_container_width=True):
+    if st.button(" 管理表を作成する → 管理表ページへ", type="primary", use_container_width=True):
         if not db.get_all_patients():
             st.error("先に患者を登録してください")
         elif not db.get_settings().get("start_date"):
