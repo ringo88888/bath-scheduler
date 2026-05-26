@@ -75,27 +75,106 @@ def render():
             value=_parse_time(settings.get("end_limit", "17:00"))
         )
 
-        #入浴の曜日選択の関数
-        #st.multiselect("ラベル", options=選択肢リスト, default=最初から選ばれているもの)
-        days_options = ["月", "火", "水", "木", "金", "土", "日"]
-        available_days = st.multiselect(
-            "入浴可能曜日",
-            options=days_options,
-            default=settings.get("available_days", "月,水,金,土").split(",")
-        )
+        day_labels = ["月", "火", "水", "木", "金", "土", "日"]
+        current_days = list(map(int, settings.get("bath_days", "0,1,2,3,4,5").split(",")))
+        current_am_only = list(map(int, settings.get("bath_days_am_only", "5").split(","))) \
+            if settings.get("bath_days_am_only") else []
+
+        st.markdown("**入浴可能曜日**")
+        day_cols = st.columns(7)
+        selected_days = []
+        am_only_days = []
+        for i, (col, label) in enumerate(zip(day_cols, day_labels)):
+            with col:
+                if st.checkbox(label, value=(i in current_days), key=f"day_{i}"):
+                    selected_days.append(i)
+                    if st.checkbox("午前のみ", value=(i in current_am_only), key=f"amonly_{i}"):
+                        am_only_days.append(i)
 
     if st.button("💾 設定を保存"):
         db.save_settings({
             "start_date": str(start_date),
+            "bath_days": ",".join(map(str, selected_days)),
+            "bath_days_am_only": ",".join(map(str, am_only_days)),
+            "am_start": am_start.strftime("%H:%M"),
+            "pm_start": pm_start.strftime("%H:%M"),
             "duration_min": duration,
+            "end_limit": end_limit.strftime("%H:%M"),
             "weekly_count": weekly_count,
             "min_interval_days": min_interval,
-            "am_start": str(am_start),
-            "pm_start": str(pm_start),
-            "end_limit": str(end_limit),
-            "available_days":",".join(available_days)
         })
         st.success("設定を保存しました")
+
+        st.divider()
+
+    # ─── 患者一覧 ──────────────────────────────────────────
+    st.markdown("#### 患者一覧")
+
+    if patients:
+        for p in patients:
+            with st.expander(f"{p['name']}"):
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    assist_label = {"duo": "二人介助", "nurse": "看護師介助", "helper": "補助者介助"}
+                    st.write(f"介助タイプ: **{assist_label.get(p['assist_type'], '')}**")
+                    opts = []
+                    if p["wheelchair"]: opts.append("車いす")
+                    if p["monitoring"]: opts.append("見守り")
+                    if opts: st.write(f"オプション: {', '.join(opts)}")
+                with col2:
+                    if st.button("退院", key=f"discharge_{p['id']}"):
+                        db.discharge_patient(p["id"])
+                        st.rerun()
+    else:
+        st.info("患者が登録されていません。下のフォームから追加してください。")
+
+    st.divider()
+
+    # ─── 患者追加フォーム ────────────────────────────────────
+    st.markdown("#### 患者を追加する")
+
+    with st.form("add_patient_form", clear_on_submit=True):
+        name = st.text_input("患者氏名 *")
+        assist_type = st.radio(
+            "介助タイプ *",
+            options=["duo", "nurse", "helper"],
+            format_func=lambda x: {"duo": "二人介助", "nurse": "看護師介助", "helper": "補助者介助"}[x],
+            horizontal=True
+        )
+        col1, col2 = st.columns(2)
+        with col1:
+            wheelchair = st.checkbox("車いす")
+        with col2:
+            monitoring = st.checkbox("見守り")
+
+        submitted = st.form_submit_button("追加する")
+        if submitted:
+            if not name.strip():
+                st.error("患者氏名を入力してください")
+            else:
+                db.add_patient(name.strip(), assist_type, wheelchair, monitoring)
+                st.success(f"「{name}」を追加しました")
+                st.rerun()
+
+    st.divider()
+
+    # ─── 管理表作成ボタン ─────────────────────────────────────
+    if st.button("✨ 管理表を作成する → 管理表ページへ", type="primary", use_container_width=True):
+        if not db.get_all_patients():
+            st.error("先に患者を登録してください")
+        elif not db.get_settings().get("start_date"):
+            st.error("開始日を設定して保存してください")
+        else:
+            from scheduler import generate_schedule
+            from datetime import date as d_cls
+            settings = db.get_settings()
+            week_start = d_cls.fromisoformat(settings["start_date"])
+            schedules = generate_schedule(week_start)
+            db.save_schedules_bulk(schedules)
+            db.save_history_snapshot(str(week_start), schedules)
+            st.session_state.current_week = str(week_start)
+            st.session_state.page = "schedule"
+            st.rerun()
 
     # -------------------------------------------------------
     # TODO: 患者個別設定（発表後に追加予定）
