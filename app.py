@@ -4,7 +4,6 @@ st.set_page_config(
     page_title="入浴介助管理表",
     page_icon="🛁",
     layout="wide",
-    initial_sidebar_state="expanded",
     initial_sidebar_state="collapsed",
 )
 
