@@ -177,3 +177,7 @@ def generate_schedule(week_start:date) -> list[dict]:
                 break
 
     return result
+
+
+def render():
+    pass

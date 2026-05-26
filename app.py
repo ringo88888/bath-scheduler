@@ -7,10 +7,11 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+#「session_stateにpageという変数がまだなければ、初期値"settings"をセットする」
 if "page" not in st.session_state:
     st.session_state.page = "settings"
 
-col1, col2, col3 = st.columns([2, 1, 1])
+col1, col2, col3 = st.columns([2, 1, 1]) #画面を3列に分割
 with col1:
     st.markdown("### 🛁 入浴介助管理表")
 with col2:
@@ -24,9 +25,9 @@ with col3:
         st.session_state.page = "schedule"
         st.rerun()
 
-st.divider()
+st.divider() #区切り線
 
-if st.session_state.page == "settings":
+if st.session_state.page == "settings": #画面部品ではなく変数置き場
     from pages import settings
     settings.render()
 else:
