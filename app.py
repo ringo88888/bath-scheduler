@@ -5,6 +5,7 @@ st.set_page_config(
     page_icon="🛁",
     layout="wide",
     initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 #「session_stateにpageという変数がまだなければ、初期値"settings"をセットする」
