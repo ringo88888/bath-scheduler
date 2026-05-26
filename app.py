@@ -13,7 +13,7 @@ if "page" not in st.session_state:
 
 col1, col2, col3 = st.columns([2, 1, 1]) #画面を3列に分割
 with col1:
-    st.markdown("### 🛁 入浴介助管理表")
+    st.markdown("### 入浴介助管理表")
 with col2:
     if st.button("⚙️ 設定", use_container_width=True,
                 type="primary" if st.session_state.page == "settings" else "secondary"):

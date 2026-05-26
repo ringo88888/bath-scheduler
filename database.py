@@ -100,7 +100,7 @@ def initialize_db(): #initializeイニシャライズ＝初期化
 #id:1の行のデータを辞書型に変換するという一連の動作をおこない、関数呼びだし場所に返す関数
 def get_settings():
     conn = get_connection()
-    row = conn.execute("SELECTION * FROM settings WHERE id = 1").fetchone() #excuteはsql文の実行
+    row = conn.execute("SELECT * FROM settings WHERE id = 1").fetchone() #excuteはsql文の実行
     conn.close()
     if row:
         return dict(row)
@@ -135,7 +135,7 @@ def get_all_patients(active_only=True):
     conn = get_connection()
     query = "SELECT * FROM patients"
     if active_only:
-        query += "WHERE is_active = 1" #sqlではpythonの変数をよめないので、PythonのTrueをSQL文の条件に翻訳
+        query += " WHERE is_active = 1" #sqlではpythonの変数をよめないので、PythonのTrueをSQL文の条件に翻訳
     rows = conn.execute(query).fetchall()
     conn.close()
     return [dict(r) for r in rows] #rowsの中のrそれぞれをdict(r)にしたリスト
