@@ -4,11 +4,37 @@ import database as db
 from scheduler import generate_schedule
 
 DAY_JP = ["月", "火", "水", "木", "金", "土", "日"]
-ASSIST_ICON = {
-    "duo":    "二人",
-    "nurse":  "看護師一人",
-    "helper": "補助者一人",
-}
+def make_icon(label, bg, color):
+    return (
+        f"<span style='background:{bg};color:{color};"
+        f"border-radius:50%;width:24px;height:24px;"
+        f"display:inline-flex;align-items:center;justify-content:center;"
+        f"font-size:11px;font-weight:700;margin-right:2px'>{label}</span>"
+    )
+
+
+def make_cell(assist, wc, mi, name, last_str):
+    icons = assist
+    if wc:
+        icons += make_icon("車", "#185FA5", "#fff")
+    if mi:
+        icons += make_icon("見", "#1D9E75", "#fff")
+    return (
+        f"<div style='background:#EAF3DE;border:1px solid #C0DD97;"
+        f"border-radius:4px;padding:6px 8px;height:90px;font-size:13px'>"
+        f"{icons}<br>"
+        f"<b style='font-size:14px'>{name}</b><br>"
+        f"<span style='color:#3B6D11;font-size:12px'>{last_str}</span>"
+        f"</div>"
+    )
+
+def get_assist_icon(assist_type):
+    icons = {
+        "duo":    make_icon("二", "#EEEDFE", "#3C3489"),
+        "nurse":  make_icon("Ns", "#E6F1FB", "#0C447C"),
+        "helper": make_icon("助", "#E1F5EE", "#085041"),
+    }
+    return icons.get(assist_type, "")
 
 
 def render():
@@ -124,7 +150,7 @@ def render():
         row_cols = st.columns([1] + [1] * 7)
         with row_cols[0]:
             st.markdown(
-                f"<small style='color:gray'>{time_label}</small>",
+                f"<small style='color:black'>{time_label}</small>",
                 unsafe_allow_html=True
             )
 
@@ -136,43 +162,38 @@ def render():
 
                 if wd not in bath_days:
                     st.markdown(
-                        "<div style='background:#B4B2A9;height:44px;"
-                        "border-radius:4px'></div>",
+                        "<div style='background:#B4B2A9;height:90px;border-radius:4px'></div>",
                         unsafe_allow_html=True
                     )
                 elif wd in am_only_days and slot_time >= pm_start:
                     st.markdown(
-                        "<div style='background:#B4B2A9;height:44px;"
-                        "border-radius:4px'></div>",
+                        "<div style='background:#B4B2A9;height:90px;border-radius:4px'></div>",
                         unsafe_allow_html=True
                     )
                 elif slot_time >= am_end and slot_time < pm_start:
                     # 午前終了時間〜午後開始時間の間は入浴不可
                     st.markdown(
-                        "<div style='background:#B4B2A9;height:44px;"
-                        "border-radius:4px'></div>",
+                        "<div style='background:#B4B2A9;height:90px;border-radius:4px'></div>",
                         unsafe_allow_html=True
                     )
                 elif sched:
                     p = patient_map.get(sched["patient_id"])
                     if p:
-                        assist = ASSIST_ICON.get(p["assist_type"], "")
-                        wc = "🦽" if p["wheelchair"] else ""
-                        mi = "👁️" if p["monitoring"] else ""
+                        assist = get_assist_icon(p["assist_type"])
+                        wc = bool(p["wheelchair"])
+                        mi = bool(p["monitoring"])
                         last = db.get_last_bath_date(p["id"], str(d))
                         last_str = ""
                         if last:
                             ld = date.fromisoformat(last)
                             last_str = f"last:{ld.month}/{ld.day}"
-                        st.success(
-                            f"{assist} {wc}{mi}  \n"
-                            f"**{p['name']}**  \n"
-                            f"{last_str}"
+                        st.markdown(
+                            make_cell(assist, wc, mi, p["name"], last_str),
+                            unsafe_allow_html=True
                         )
                 else:
                     st.markdown(
-                        "<div style='background:#f0f0f0;height:44px;"
-                        "border-radius:4px'></div>",
+                        "<div style='background:#EAF3DE;height:90px;border-radius:4px;border:1px solid #C0DD97'></div>",
                         unsafe_allow_html=True
                     )
 

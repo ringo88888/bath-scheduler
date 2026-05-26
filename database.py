@@ -90,6 +90,37 @@ def initialize_db(): #initializeイニシャライズ＝初期化
     #week_start 2025-05-25'のようにその週の月曜日の日付を保存
     #snapshot その週の全予定をまるごと保存
     #saved_at スナップショットを保存した日時
+
+    # デモ用初期データ（患者が0人のときだけ挿入）
+    patient_count = conn.execute("SELECT COUNT(*) FROM patients").fetchone()[0]
+    if patient_count == 0:
+        demo_patients = [
+            ("佐藤 太郎", "duo", 0, 0),
+            ("林 花子", "helper", 0, 1),
+            ("鈴木 次郎", "helper", 1, 0),
+            ("田中 良子", "nurse", 0, 0),
+        ]
+        conn.executemany("""
+            INSERT INTO patients (name, assist_type, wheelchair, monitoring)
+            VALUES (?, ?, ?, ?)
+        """, demo_patients)
+
+    # デモ用初期設定
+    conn.execute("""
+        UPDATE settings SET
+            start_date = '2026-05-27',
+            bath_days = '0,1,2,3,4,5',
+            bath_days_am_only = '5',
+            am_start = '09:30',
+            am_end = '12:00',
+            pm_start = '13:30',
+            duration_min = 45,
+            end_limit = '17:00',
+            weekly_count = 2,
+            min_interval_days = 3
+        WHERE id = 1
+    """)
+
     conn.commit() #ここまでの変更を確定してbath.dbに書き込む
     conn.close() #データベースへの接続を切ります。使い終わったら必ず閉じる、というルール
 
