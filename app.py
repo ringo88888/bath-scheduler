@@ -3,9 +3,19 @@ import streamlit as st
 st.set_page_config(
     page_title="入浴介助管理表",
     page_icon="🛁",
-    layout="centered",
+    layout="wide",
     initial_sidebar_state="collapsed",
 )
+
+st.markdown("""
+    <style>
+    .block-container {
+        max-width: 1100px;
+        padding-left: 2rem;
+        padding-right: 2rem;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
 #「session_stateにpageという変数がまだなければ、初期値"settings"をセットする」
 if "page" not in st.session_state:
